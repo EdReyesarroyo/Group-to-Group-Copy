@@ -1,0 +1,60 @@
+# Purpuse: Group to Group Member Copy with Nested Group Members
+# Tested and Validated Complete: 3/25/24
+
+########Read Me############
+<#
+The script iterates through the members of a source Entra group, differentiating each object  as a user or a nested group. 
+Users, are added to the targeted Entra group. Nested groups, well, we retrieve the members and add them to the targeted group. 
+Note: members already in the target group will trigger an error indicating the object already exists, 
+and the script will proceed to the next object. Last uses of a function to manage nested groups recursively, 
+ensuring all users, whether directly in the source group or nested within sub-groups, are processed.  
+
+Best way:
+Measure twice: Check twice the source and target ids and rehearse on your personal account if needed your your own groups
+if needed. If we are 100% that the first two arrays ($sourceGroupIds and $targetGroupId) are correct: 
+1-Log into azure and open Az CLI on Powershell 
+2-Copy and paste the script
+3-Pending on the size of the operation it may take a few mins so, chill for a sec...
+4- The error (One or more added object references already exist for the following modified properties: 'members') means the user was already 
+on the group and the loop will move on.
+5-After the final script complete message populates we can QC through the group ID logs as needed. 
+#> 
+############Read Me###############
+
+
+# Find the source group OBJ ID/IDs and define them in an array. This is located in the overview tab on the left blade of the group.
+# Seprate them by (comas,), (array and all that), as below if more than one. 
+# Add the source and target group OBJ ID.
+# Check again that the OBJ IDs are accurate....
+$sourceGroupIds = @("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxx", "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxx")
+$targetGroupId = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxx"
+
+# Create/Define a function to add users from the source group/groups above to the source group also above. And, properly manage nested groups
+function Add-UsersFromGroup {
+    param (
+        [string]$groupId
+    )
+
+    # List all members of the specified group/groups and convert the output to a PowerShell object/jsonish for easier handling.
+    $members = az ad group member list --group $groupId --query "[]" --output json | ConvertFrom-Json
+# Iterate over the members of the group for further processing. 
+    foreach ($member in $members) {
+        if ($member.'@odata.type' -eq "#microsoft.graph.user") {
+# Member is a user, add them to the target group
+            az ad group member add --group $targetGroupId --member-id $member.id
+        } elseif ($member.'@odata.type' -eq "#microsoft.graph.group") {
+# Member is a group, recurse into this group
+            Add-UsersFromGroup -groupId $member.id
+        }
+    }
+}
+
+# Iterate over each source group ID and go add users
+foreach ($sourceGroupId in $sourceGroupIds) {
+    Add-UsersFromGroup -groupId $sourceGroupId
+}
+
+# Output completion message
+Write-Output "Script completed. Please check the target group for QC/QA."
+# On the left blade of the group we can double check our ourk through the audit logs....
+
